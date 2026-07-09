@@ -62,3 +62,12 @@ Example 支持：
 6. 点击「打开 Example 作品库」开始测试。
 
 注意：Example 为了方便验证，使用 `PhotosPickerItem.loadTransferable(type: Data.self)` 导入资源。大视频会占用较高内存，正式项目建议改成基于 `FileRepresentation` 的文件导入方式。
+
+## 2026-07-09 Native Photos Interaction Update
+
+This version adds two iOS Photos-style interactions to the library grid/browser flow:
+
+- The library grid supports a two-finger pinch gesture. Pinching changes the thumbnail size and therefore changes the number of visible items per row, similar to the native Photos grid.
+- Opening a work item from the grid now uses an in-place hero zoom transition built with `matchedGeometryEffect`. The preview is presented as a full-screen overlay inside `YCWorksLibraryView`, not through a bottom sheet or modal sheet.
+
+The public `YCWorkPreviewView` initializer remains usable as a standalone full-screen viewer. `YCWorksLibraryView` uses the enhanced hero transition path automatically.

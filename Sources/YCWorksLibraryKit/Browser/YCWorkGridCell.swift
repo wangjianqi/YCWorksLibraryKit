@@ -5,23 +5,29 @@ internal struct YCWorkGridCell: View {
     let item: YCWorkItem
     let isSelectionMode: Bool
     let isSelected: Bool
+    let sideLength: CGFloat
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            YCAsyncThumbnailView(item: item)
-                .aspectRatio(1, contentMode: .fill)
-                .clipped()
-                .background(Color.secondary.opacity(0.12))
-
-            LinearGradient(
-                colors: [.black.opacity(0.42), .clear],
-                startPoint: .top,
-                endPoint: .center
+            YCAsyncThumbnailView(
+                item: item,
+                targetSize: CGSize(width: max(64, sideLength * 2.2), height: max(64, sideLength * 2.2))
             )
+            .aspectRatio(1, contentMode: .fill)
+            .clipped()
+            .background(Color.secondary.opacity(0.12))
+
+            if sideLength >= 42 {
+                LinearGradient(
+                    colors: [.black.opacity(0.42), .clear],
+                    startPoint: .top,
+                    endPoint: .center
+                )
+            }
 
             VStack(alignment: .trailing, spacing: 6) {
                 HStack(spacing: 6) {
-                    if item.isFavorite {
+                    if item.isFavorite, sideLength >= 38 {
                         Image(systemName: "heart.fill")
                             .font(.caption)
                             .foregroundStyle(.white)
@@ -30,36 +36,45 @@ internal struct YCWorkGridCell: View {
 
                     if isSelectionMode {
                         Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                            .font(.title3)
+                            .font(sideLength < 38 ? .caption : .title3)
                             .foregroundStyle(isSelected ? .blue : .white)
                             .shadow(radius: 2)
                     }
                 }
                 Spacer()
             }
-            .padding(7)
+            .padding(sideLength < 42 ? 3 : 7)
 
-            VStack {
-                Spacer()
-                HStack(spacing: 4) {
-                    if item.mediaType == .video {
-                        Image(systemName: "play.fill")
-                            .font(.caption2)
-                        Text(YCDurationFormatter.string(from: item.duration))
-                            .font(.caption2.monospacedDigit())
-                    }
+            if sideLength >= 46 {
+                VStack {
                     Spacer()
-                    if item.isEdited {
-                        Image(systemName: "slider.horizontal.3")
-                            .font(.caption2)
+                    HStack(spacing: 4) {
+                        if item.mediaType == .video {
+                            Image(systemName: "play.fill")
+                                .font(.caption2)
+                            Text(YCDurationFormatter.string(from: item.duration))
+                                .font(.caption2.monospacedDigit())
+                        }
+                        Spacer()
+                        if item.isEdited {
+                            Image(systemName: "slider.horizontal.3")
+                                .font(.caption2)
+                        }
                     }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 5)
+                    .background(.black.opacity(0.35))
                 }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 5)
-                .background(.black.opacity(0.35))
+            } else if item.mediaType == .video {
+                Image(systemName: "play.fill")
+                    .font(.system(size: max(7, sideLength * 0.22), weight: .bold))
+                    .foregroundStyle(.white)
+                    .shadow(radius: 2)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             }
         }
+        .clipped()
     }
 }
 
@@ -84,8 +99,12 @@ internal struct YCAsyncThumbnailView: View {
                 }
             }
         }
-        .task(id: item.id) {
+        .task(id: thumbnailTaskID) {
             image = await YCThumbnailGenerator.shared.thumbnail(for: item, targetSize: targetSize)
         }
+    }
+
+    private var thumbnailTaskID: String {
+        "\(item.id)-\(Int(targetSize.width))-\(Int(targetSize.height))"
     }
 }

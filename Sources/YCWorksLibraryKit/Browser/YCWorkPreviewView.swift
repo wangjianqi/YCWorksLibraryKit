@@ -14,9 +14,13 @@ public struct YCWorkPreviewView: View {
     @State private var imageEditorRoute: YCWorkItem?
     @State private var videoEditorRoute: YCWorkItem?
     @State private var errorMessage: String?
+    @State private var isHeroSettled = false
 
     private let configuration: YCWorksLibraryConfiguration
     private let dataProvider: any YCWorksDataProvider
+    private let transitionNamespace: Namespace.ID?
+    private let activeHeroID: YCWorkItem.ID?
+    private let onCurrentItemChanged: (Int, YCWorkItem) -> Void
     private let onDismiss: () -> Void
     private let onReload: () -> Void
 
@@ -25,6 +29,9 @@ public struct YCWorkPreviewView: View {
         initialIndex: Int,
         configuration: YCWorksLibraryConfiguration = .default,
         dataProvider: any YCWorksDataProvider,
+        transitionNamespace: Namespace.ID? = nil,
+        activeHeroID: YCWorkItem.ID? = nil,
+        onCurrentItemChanged: @escaping (Int, YCWorkItem) -> Void = { _, _ in },
         onDismiss: @escaping () -> Void = {},
         onReload: @escaping () -> Void = {}
     ) {
@@ -32,18 +39,28 @@ public struct YCWorkPreviewView: View {
         _currentIndex = State(initialValue: max(0, min(initialIndex, max(items.count - 1, 0))))
         self.configuration = configuration
         self.dataProvider = dataProvider
+        self.transitionNamespace = transitionNamespace
+        self.activeHeroID = activeHeroID
+        self.onCurrentItemChanged = onCurrentItemChanged
         self.onDismiss = onDismiss
         self.onReload = onReload
     }
 
     public var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            Color.black
+                .opacity(isHeroSettled ? 1 : 0.001)
+                .ignoresSafeArea()
 
             if !items.isEmpty {
                 TabView(selection: $currentIndex) {
                     ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                         previewContent(for: item)
+                            .ycHeroMatchedDestination(
+                                id: item.id,
+                                namespace: transitionNamespace,
+                                isEnabled: activeHeroID == item.id
+                            )
                             .tag(index)
                             .onTapGesture {
                                 withAnimation(.easeInOut(duration: 0.18)) {
@@ -116,6 +133,18 @@ public struct YCWorkPreviewView: View {
         } message: {
             Text(errorMessage ?? "")
         }
+        .onAppear {
+            if let currentItem {
+                onCurrentItemChanged(currentIndex, currentItem)
+            }
+            withAnimation(.easeInOut(duration: 0.16).delay(0.16)) {
+                isHeroSettled = true
+            }
+        }
+        .onChange(of: currentIndex) { _, newValue in
+            guard items.indices.contains(newValue) else { return }
+            onCurrentItemChanged(newValue, items[newValue])
+        }
     }
 
     private var currentItem: YCWorkItem? {
@@ -136,6 +165,9 @@ public struct YCWorkPreviewView: View {
     private func topBar(for item: YCWorkItem) -> some View {
         HStack(spacing: 12) {
             Button {
+                withAnimation(.easeInOut(duration: 0.1)) {
+                    isHeroSettled = false
+                }
                 onDismiss()
                 dismiss()
             } label: {
@@ -320,5 +352,27 @@ private struct YCPreviewActionButton: View {
             .frame(maxWidth: .infinity)
         }
         .buttonStyle(.plain)
+    }
+}
+
+
+private extension View {
+    @ViewBuilder
+    func ycHeroMatchedDestination(
+        id: YCWorkItem.ID,
+        namespace: Namespace.ID?,
+        isEnabled: Bool
+    ) -> some View {
+        if let namespace, isEnabled {
+            self.matchedGeometryEffect(
+                id: id,
+                in: namespace,
+                properties: .frame,
+                anchor: .center,
+                isSource: false
+            )
+        } else {
+            self
+        }
     }
 }

@@ -1,9 +1,12 @@
 import SwiftUI
+import Foundation
 
 public struct YCWorksLibraryView: View {
     @StateObject private var viewModel: YCWorksLibraryViewModel
     @State private var showsFilterSheet = false
     @State private var previewRoute: PreviewRoute?
+    @State private var activeHeroID: YCWorkItem.ID?
+    @Namespace private var heroNamespace
     @State private var shareRoute: ShareRoute?
     @State private var deletingItems: [YCWorkItem] = []
     @State private var showsDeleteConfirmation = false
@@ -27,6 +30,8 @@ public struct YCWorksLibraryView: View {
                     items: viewModel.visibleWorks,
                     isSelectionMode: viewModel.isSelectionMode,
                     selectedIDs: viewModel.selectedIDs,
+                    transitionNamespace: heroNamespace,
+                    activeHeroID: activeHeroID,
                     onTap: handleTap,
                     onLongPress: handleLongPress,
                     onToggleSelection: viewModel.toggleSelection,
@@ -54,9 +59,31 @@ public struct YCWorksLibraryView: View {
                 if viewModel.visibleWorks.isEmpty && !viewModel.isLoading {
                     YCWorksEmptyStateView()
                 }
+
+                if let previewRoute {
+                    YCWorkPreviewView(
+                        items: previewRoute.items,
+                        initialIndex: previewRoute.index,
+                        configuration: viewModel.configuration,
+                        dataProvider: viewModel.dataProvider,
+                        transitionNamespace: heroNamespace,
+                        activeHeroID: activeHeroID,
+                        onCurrentItemChanged: { _, item in
+                            activeHeroID = item.id
+                        },
+                        onDismiss: {
+                            dismissPreviewWithHeroAnimation()
+                        },
+                        onReload: {
+                            Task { await viewModel.reloadSilently() }
+                        }
+                    )
+                    .zIndex(20)
+                    .transition(.identity)
+                }
             }
             .safeAreaInset(edge: .bottom) {
-                if viewModel.isSelectionMode {
+                if viewModel.isSelectionMode && previewRoute == nil {
                     YCWorksSelectionToolbar(
                         selectedCount: viewModel.selectedIDs.count,
                         allowsShare: viewModel.configuration.allowsShare,
@@ -111,6 +138,7 @@ public struct YCWorksLibraryView: View {
                     }
                 }
             }
+            .toolbar(previewRoute == nil ? .visible : .hidden, for: .navigationBar)
             .task {
                 await viewModel.load()
             }
@@ -123,20 +151,6 @@ public struct YCWorksLibraryView: View {
                     sort: $viewModel.sort
                 )
                 .presentationDetents([.medium])
-            }
-            .fullScreenCover(item: $previewRoute) { route in
-                YCWorkPreviewView(
-                    items: route.items,
-                    initialIndex: route.index,
-                    configuration: viewModel.configuration,
-                    dataProvider: viewModel.dataProvider,
-                    onDismiss: {
-                        previewRoute = nil
-                    },
-                    onReload: {
-                        Task { await viewModel.reloadSilently() }
-                    }
-                )
             }
             .sheet(item: $shareRoute) { route in
                 YCShareSheet(activityItems: route.urls)
@@ -172,7 +186,19 @@ public struct YCWorksLibraryView: View {
             return
         }
         guard let index = viewModel.visibleWorks.firstIndex(where: { $0.id == item.id }) else { return }
-        previewRoute = PreviewRoute(items: viewModel.visibleWorks, index: index)
+        activeHeroID = item.id
+        withAnimation(.spring(response: 0.42, dampingFraction: 0.88, blendDuration: 0.04)) {
+            previewRoute = PreviewRoute(items: viewModel.visibleWorks, index: index)
+        }
+    }
+
+    private func dismissPreviewWithHeroAnimation() {
+        withAnimation(.spring(response: 0.42, dampingFraction: 0.88, blendDuration: 0.04)) {
+            previewRoute = nil
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.46) {
+            activeHeroID = nil
+        }
     }
 
     private func handleLongPress(_ item: YCWorkItem) {
