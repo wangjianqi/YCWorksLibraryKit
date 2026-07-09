@@ -187,16 +187,16 @@ public struct YCWorksLibraryView: View {
         }
         guard let index = viewModel.visibleWorks.firstIndex(where: { $0.id == item.id }) else { return }
         activeHeroID = item.id
-        withAnimation(.spring(response: 0.42, dampingFraction: 0.88, blendDuration: 0.04)) {
+        withAnimation(.spring(response: 0.38, dampingFraction: 0.86, blendDuration: 0.02)) {
             previewRoute = PreviewRoute(items: viewModel.visibleWorks, index: index)
         }
     }
 
     private func dismissPreviewWithHeroAnimation() {
-        withAnimation(.spring(response: 0.42, dampingFraction: 0.88, blendDuration: 0.04)) {
+        withAnimation(.spring(response: 0.38, dampingFraction: 0.86, blendDuration: 0.02)) {
             previewRoute = nil
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.46) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.42) {
             activeHeroID = nil
         }
     }

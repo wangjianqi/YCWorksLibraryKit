@@ -1,5 +1,6 @@
 import SwiftUI
 import AVKit
+@preconcurrency import UIKit
 
 public struct YCWorkPreviewView: View {
     @Environment(\.dismiss) private var dismiss
@@ -15,6 +16,7 @@ public struct YCWorkPreviewView: View {
     @State private var videoEditorRoute: YCWorkItem?
     @State private var errorMessage: String?
     @State private var isHeroSettled = false
+    @State private var isClosing = false
 
     private let configuration: YCWorksLibraryConfiguration
     private let dataProvider: any YCWorksDataProvider
@@ -51,35 +53,48 @@ public struct YCWorkPreviewView: View {
             Color.black
                 .opacity(isHeroSettled ? 1 : 0.001)
                 .ignoresSafeArea()
+                .animation(.easeInOut(duration: 0.16), value: isHeroSettled)
 
             if !items.isEmpty {
-                TabView(selection: $currentIndex) {
-                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                        previewContent(for: item)
-                            .ycHeroMatchedDestination(
-                                id: item.id,
-                                namespace: transitionNamespace,
-                                isEnabled: activeHeroID == item.id
-                            )
-                            .tag(index)
-                            .onTapGesture {
-                                withAnimation(.easeInOut(duration: 0.18)) {
-                                    showsChrome.toggle()
+                if isHeroSettled {
+                    TabView(selection: $currentIndex) {
+                        ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                            previewContent(for: item)
+                                .tag(index)
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    withAnimation(.easeInOut(duration: 0.18)) {
+                                        showsChrome.toggle()
+                                    }
                                 }
-                            }
+                        }
                     }
+                    .tabViewStyle(.page(indexDisplayMode: .never))
+                    .ignoresSafeArea()
+                    .transition(.opacity.animation(.easeInOut(duration: 0.12)))
                 }
-                .tabViewStyle(.page(indexDisplayMode: .never))
-                .ignoresSafeArea()
+
+                if let currentItem, !isHeroSettled {
+                    YCPreviewHeroSurface(item: currentItem)
+                        .ycHeroMatchedDestination(
+                            id: currentItem.id,
+                            namespace: transitionNamespace,
+                            isEnabled: activeHeroID == currentItem.id
+                        )
+                        .ignoresSafeArea()
+                        .zIndex(3)
+                        .allowsHitTesting(false)
+                }
             }
 
-            if showsChrome, let currentItem {
+            if showsChrome, isHeroSettled, let currentItem {
                 VStack(spacing: 0) {
                     topBar(for: currentItem)
                     Spacer()
                     bottomBar(for: currentItem)
                 }
-                .transition(.opacity)
+                .transition(.opacity.animation(.easeInOut(duration: 0.16)))
+                .zIndex(5)
             }
         }
         .sheet(isPresented: $showsInfo) {
@@ -137,9 +152,7 @@ public struct YCWorkPreviewView: View {
             if let currentItem {
                 onCurrentItemChanged(currentIndex, currentItem)
             }
-            withAnimation(.easeInOut(duration: 0.16).delay(0.16)) {
-                isHeroSettled = true
-            }
+            settleHeroAfterOpening()
         }
         .onChange(of: currentIndex) { _, newValue in
             guard items.indices.contains(newValue) else { return }
@@ -165,11 +178,7 @@ public struct YCWorkPreviewView: View {
     private func topBar(for item: YCWorkItem) -> some View {
         HStack(spacing: 12) {
             Button {
-                withAnimation(.easeInOut(duration: 0.1)) {
-                    isHeroSettled = false
-                }
-                onDismiss()
-                dismiss()
+                requestDismiss()
             } label: {
                 Image(systemName: "chevron.left")
                     .font(.headline)
@@ -284,6 +293,29 @@ public struct YCWorkPreviewView: View {
         )
     }
 
+    private func settleHeroAfterOpening() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
+            guard !isClosing else { return }
+            withAnimation(.easeInOut(duration: 0.12)) {
+                isHeroSettled = true
+                showsChrome = true
+            }
+        }
+    }
+
+    private func requestDismiss() {
+        guard !isClosing else { return }
+        isClosing = true
+        withAnimation(.easeInOut(duration: 0.1)) {
+            showsChrome = false
+            isHeroSettled = false
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.035) {
+            onDismiss()
+            dismiss()
+        }
+    }
+
     private func update(_ item: YCWorkItem) async {
         do {
             try await dataProvider.updateWork(item)
@@ -305,8 +337,7 @@ public struct YCWorkPreviewView: View {
             }
             onReload()
             if items.isEmpty {
-                onDismiss()
-                dismiss()
+                requestDismiss()
             }
         } catch {
             errorMessage = error.localizedDescription
@@ -334,6 +365,44 @@ public struct YCWorkPreviewView: View {
     }
 }
 
+private struct YCPreviewHeroSurface: View {
+    let item: YCWorkItem
+    @State private var image: UIImage?
+
+    var body: some View {
+        ZStack {
+            Color.black
+            Group {
+                if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                } else {
+                    YCAsyncThumbnailView(
+                        item: item,
+                        targetSize: CGSize(width: 1200, height: 1200)
+                    )
+                    .aspectRatio(1, contentMode: .fit)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .task(id: item.id) {
+            switch item.mediaType {
+            case .image:
+                image = await Task.detached(priority: .userInitiated) {
+                    UIImage(contentsOfFile: item.fileURL.path)
+                }.value
+            case .video:
+                image = await YCThumbnailGenerator.shared.generateVideoThumbnail(
+                    url: item.fileURL,
+                    targetSize: CGSize(width: 1200, height: 1200)
+                )
+            }
+        }
+    }
+}
+
 private struct YCPreviewActionButton: View {
     let title: String
     let systemImage: String
@@ -354,7 +423,6 @@ private struct YCPreviewActionButton: View {
         .buttonStyle(.plain)
     }
 }
-
 
 private extension View {
     @ViewBuilder

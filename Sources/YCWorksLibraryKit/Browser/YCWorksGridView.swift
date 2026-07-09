@@ -14,14 +14,12 @@ internal struct YCWorksGridView: View {
     let onDelete: (YCWorkItem) -> Void
     let onShare: (YCWorkItem) -> Void
 
-    @AppStorage("YCWorksLibraryKit.gridCellWidth") private var committedCellWidth: Double = 78
-    @State private var liveCellWidth: CGFloat = 78
-    @State private var pinchStartCellWidth: CGFloat = 78
-    @State private var isPinching = false
+    @AppStorage("YCWorksLibraryKit.gridCellWidth") private var committedCellWidth: Double = 92
+    @GestureState private var pinchScale: CGFloat = 1
 
     private let spacing: CGFloat = 2
-    private let minCellWidth: CGFloat = 18
-    private let maxCellWidth: CGFloat = 190
+    private let minCellWidth: CGFloat = 26
+    private let maxCellWidth: CGFloat = 210
 
     var body: some View {
         GeometryReader { proxy in
@@ -77,35 +75,23 @@ internal struct YCWorksGridView: View {
                 }
                 .padding(.horizontal, spacing)
                 .padding(.bottom, 12)
-                .transaction { transaction in
-                    if isPinching {
-                        transaction.animation = nil
-                    }
-                }
+                .animation(.interactiveSpring(response: 0.18, dampingFraction: 0.92, blendDuration: 0.02), value: layout.columnCount)
+                .animation(.interactiveSpring(response: 0.18, dampingFraction: 0.92, blendDuration: 0.02), value: layout.itemWidth)
             }
-            .simultaneousGesture(pinchGesture)
-            .onAppear {
-                liveCellWidth = CGFloat(committedCellWidth)
-                pinchStartCellWidth = CGFloat(committedCellWidth)
-            }
+            .simultaneousGesture(pinchGesture, including: .all)
         }
     }
 
     private var pinchGesture: some Gesture {
         MagnificationGesture(minimumScaleDelta: 0.001)
-            .onChanged { value in
-                if !isPinching {
-                    isPinching = true
-                    pinchStartCellWidth = CGFloat(committedCellWidth)
-                }
-                liveCellWidth = clampedCellWidth(pinchStartCellWidth * value)
+            .updating($pinchScale) { value, state, _ in
+                state = max(0.2, min(6, value))
             }
             .onEnded { value in
-                let finalWidth = clampedCellWidth(pinchStartCellWidth * value)
-                liveCellWidth = finalWidth
-                committedCellWidth = Double(finalWidth)
-                pinchStartCellWidth = finalWidth
-                isPinching = false
+                let finalWidth = clampedCellWidth(CGFloat(committedCellWidth) * value)
+                withAnimation(.interactiveSpring(response: 0.2, dampingFraction: 0.9, blendDuration: 0.02)) {
+                    committedCellWidth = Double(finalWidth)
+                }
             }
     }
 
@@ -115,21 +101,26 @@ internal struct YCWorksGridView: View {
 
     private func makeGridLayout(containerWidth: CGFloat) -> YCGridLayout {
         let availableWidth = max(1, containerWidth - spacing * 2)
-        let targetWidth = clampedCellWidth(liveCellWidth)
+        let targetWidth = clampedCellWidth(CGFloat(committedCellWidth) * pinchScale)
         let rawColumnCount = Int((availableWidth + spacing) / (targetWidth + spacing))
-        let columnCount = max(1, min(26, rawColumnCount))
+        let columnCount = max(1, min(32, rawColumnCount))
         let exactWidth = floor((availableWidth - CGFloat(columnCount - 1) * spacing) / CGFloat(columnCount))
         let columns = Array(
             repeating: GridItem(.fixed(exactWidth), spacing: spacing, alignment: .center),
             count: columnCount
         )
-        return YCGridLayout(columns: columns, itemWidth: exactWidth)
+        return YCGridLayout(columns: columns, itemWidth: exactWidth, columnCount: columnCount)
     }
 }
 
-private struct YCGridLayout {
+private struct YCGridLayout: Equatable {
     let columns: [GridItem]
     let itemWidth: CGFloat
+    let columnCount: Int
+
+    static func == (lhs: YCGridLayout, rhs: YCGridLayout) -> Bool {
+        lhs.itemWidth == rhs.itemWidth && lhs.columnCount == rhs.columnCount
+    }
 }
 
 private extension View {
